@@ -1,0 +1,13 @@
+[package]
+name = "DMCHDLoader"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "dinput8"
+crate-type = ["cdylib"]
+
+
+[dependencies]
+windows = {workspace = true, features = ["Win32_System_LibraryLoader"]}
+libloading = "0.8.9"
