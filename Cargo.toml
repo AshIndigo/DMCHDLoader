@@ -9,5 +9,10 @@ crate-type = ["cdylib"]
 
 
 [dependencies]
-windows = {workspace = true, features = ["Win32_System_LibraryLoader"]}
-libloading = "0.8.9"
+windows = { workspace = true, features = ["Win32_System_Console"] }
+randomizer_utilities = { path = "../randomizer_utilities" }
+log = { workspace = true }
+libloading = "0.9.0"
+xxhash-rust = { version = "0.8.15", features = ["const_xxh3"] }
+serde = { version = "1.0.228", features = ["derive"] }
+anyhow = "1.0.100"
