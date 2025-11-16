@@ -2,11 +2,13 @@ use std::sync::OnceLock;
 
 #[derive(Debug)]
 pub(crate) struct Status {
-    pub(crate) crimson_hash_error: bool
+    pub crimson_hash_error: bool,
+    pub dmc3_hash_error: bool,
 }
 
-pub static STATUS: OnceLock<Option<Status>> = OnceLock::new();
+pub static STATUS: OnceLock<Status> = OnceLock::new();
 
-pub extern "Rust" fn test() -> &'static Option<Status> {
+#[unsafe(export_name = "get_loader_status")]
+pub extern "C" fn get_loader_status() -> &'static Status {
     STATUS.get().unwrap()
 }

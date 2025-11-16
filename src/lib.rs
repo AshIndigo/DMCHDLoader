@@ -68,6 +68,7 @@ pub extern "system" fn DllMain(
             load_real_dinput8();
             let mut status: Status = Status {
                 crimson_hash_error: false,
+                dmc3_hash_error: false,
             };
             match current_exe()
                 .unwrap()
@@ -79,14 +80,49 @@ pub extern "system" fn DllMain(
                 DMC_LAUNCHER => {
                     // Do nothing but is here in case I ever want to do something to the launcher
                 }
-                DMC1 => {}
+                DMC1 => {
+                    create_console();
+                    randomizer_utilities::setup_logger("dmc_mod_loader");
+                    match load_dmc1_mods(&mut status) {
+                        Ok(_) => {
+                            log::info!("Successfully loaded other dlls");
+                        }
+                        Err(err) => {
+                            log::error!("Failed to load other dlls: {}", err);
+                        }
+                    }
+                    match is_file_valid("dmc1.exe", 16596094990179088469) {
+                        Ok(_) => {
+                            log::info!("Valid install of DMC1 detected!");
+                        }
+                        Err(err) => match err.kind() {
+                            ErrorKind::InvalidData => {
+                                log::error!(
+                                    "DMC1 does not match the expected hash, bad things may occur! Please downgrade/repatch your game."
+                                );
+                                status.dmc3_hash_error = true;
+                            }
+                            ErrorKind::NotFound => {
+                                log::error!(
+                                    "DMC1 does not exist! How in the world did you manage this"
+                                );
+                            }
+                            _ => {
+                                log::error!("Unexpected error: {}", err);
+                            }
+                        },
+                    }
+                    let _ = unsafe {
+                        LoadLibraryA(PCSTR::from_raw(c"dmc1_randomizer.dll".as_ptr() as *const u8))
+                    };
+                }
                 DMC2 => {
                     // Do nothing
                 }
                 DMC3 => {
                     create_console();
                     randomizer_utilities::setup_logger("dmc_mod_loader");
-                    match load_other_dlls(&mut status) {
+                    match load_dmc3_mods(&mut status) {
                         Ok(_) => {
                             log::info!("Successfully loaded other dlls");
                         }
@@ -102,7 +138,8 @@ pub extern "system" fn DllMain(
                             ErrorKind::InvalidData => {
                                 log::error!(
                                     "DMC3 does not match the expected hash, bad things may occur! Please downgrade/repatch your game."
-                                )
+                                );
+                                status.dmc3_hash_error = true;
                             }
                             ErrorKind::NotFound => {
                                 log::error!(
@@ -120,9 +157,7 @@ pub extern "system" fn DllMain(
                 }
                 _ => {}
             }
-            status::STATUS
-                .set(Some(status))
-                .expect("Unable to set status");
+            status::STATUS.set(status).expect("Unable to set status");
         }
         DLL_PROCESS_DETACH => {
             // For cleanup
@@ -134,7 +169,29 @@ pub extern "system" fn DllMain(
     }
     BOOL(1)
 }
-fn load_other_dlls(status: &mut Status) -> Result<(), std::io::Error> {
+
+fn load_dmc1_mods(status: &mut Status) -> Result<(), std::io::Error> {
+    if !config::CONFIG.mods.disable_ddmk {
+        match is_file_valid("Eva.dll", 2536699235936189826) {
+            // TODO Get Hash
+            Ok(_) => {
+                let _ = unsafe { LoadLibraryA(PCSTR::from_raw(c"Eva.dll".as_ptr() as *const u8)) };
+            }
+            Err(err) => match err.kind() {
+                ErrorKind::InvalidData => {
+                    log::error!("Eva/DDMK Hash does not match version 2.7.3, please update DDMK");
+                }
+                ErrorKind::NotFound => {}
+                _ => {
+                    log::error!("Unexpected error: {}", err);
+                }
+            },
+        }
+    }
+    Ok(())
+}
+
+fn load_dmc3_mods(status: &mut Status) -> Result<(), std::io::Error> {
     // The game will immolate if both of these try to load
     if !config::CONFIG.mods.disable_ddmk {
         match is_file_valid("Mary.dll", 7087074874482460961) {
@@ -173,6 +230,7 @@ fn load_other_dlls(status: &mut Status) -> Result<(), std::io::Error> {
 
 fn is_file_valid(file_path: &str, expected_hash: u64) -> Result<(), std::io::Error> {
     let data = fs::read(file_path)?;
+    //log::debug!("Hash for {file_path}: {}", xxh3_64(&data));
     if xxh3_64(&data) == expected_hash {
         Ok(())
     } else {
