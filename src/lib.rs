@@ -173,7 +173,6 @@ pub extern "system" fn DllMain(
 fn load_dmc1_mods(status: &mut Status) -> Result<(), std::io::Error> {
     if !config::CONFIG.mods.disable_ddmk {
         match is_file_valid("Eva.dll", 2536699235936189826) {
-            // TODO Get Hash
             Ok(_) => {
                 let _ = unsafe { LoadLibraryA(PCSTR::from_raw(c"Eva.dll".as_ptr() as *const u8)) };
             }
