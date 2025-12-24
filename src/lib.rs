@@ -68,7 +68,10 @@ pub extern "system" fn DllMain(
             load_real_dinput8();
             let mut status: Status = Status {
                 crimson_hash_error: false,
+                ddmk_dmc3_hash_error: false,
+                dmc1_hash_error: false,
                 dmc3_hash_error: false,
+                ddmk_dmc1_hash_error: false,
             };
             match current_exe()
                 .unwrap()
@@ -100,7 +103,7 @@ pub extern "system" fn DllMain(
                                 log::error!(
                                     "DMC1 does not match the expected hash, bad things may occur! Please downgrade/repatch your game."
                                 );
-                                status.dmc3_hash_error = true;
+                                status.dmc1_hash_error = true;
                             }
                             ErrorKind::NotFound => {
                                 log::error!(
@@ -179,6 +182,7 @@ fn load_dmc1_mods(status: &mut Status) -> Result<(), std::io::Error> {
             Err(err) => match err.kind() {
                 ErrorKind::InvalidData => {
                     log::error!("Eva/DDMK Hash does not match version 2.7.3, please update DDMK");
+                    status.ddmk_dmc1_hash_error = true;
                 }
                 ErrorKind::NotFound => {}
                 _ => {
@@ -200,6 +204,7 @@ fn load_dmc3_mods(status: &mut Status) -> Result<(), std::io::Error> {
             Err(err) => match err.kind() {
                 ErrorKind::InvalidData => {
                     log::error!("Mary/DDMK Hash does not match version 2.7.3, please update DDMK");
+                    status.ddmk_dmc3_hash_error = true;
                 }
                 ErrorKind::NotFound => {}
                 _ => {
