@@ -1,0 +1,74 @@
+name: Build
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # Mod is for Windows
+    runs-on: windows-latest
+    # Grab meta repo.
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: AshIndigo/APRandomizers
+          submodules: 'true'
+      # Obtain the cache if it exists
+      - name: Cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          # Key is based off of main cargo.lock hash
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+      # Build mod loader
+      - name: Build Loader
+        run: cargo build -p DMCHDLoader --release
+      # Get the version for use in zip name
+      - name: Get Cargo.toml version
+        id: cargo_version
+        run: |
+          $version = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json | %{$_.packages[1].version}
+          echo "CARGO_VERSION=$version" >> $env:GITHUB_ENV
+      # Compile needed files
+      - name: Package files
+        run: |
+          Copy-Item -Path target/release/dinput8.dll -Destination dinput8.dll 
+          Copy-Item -Path DMCHDloader/src/data/steam_appid.txt -Destination steam_appid.txt
+      # Zip files
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: "DMCHDLoader-${{ env.CARGO_VERSION }}"
+          path: |
+            dinput8.dll
+            steam_appid.txt
+  # Release section
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: "DMCHDLoader-${{ env.CARGO_VERSION }}"
+          path: ./
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2.5.0
+        with:
+          files: "DMCHDLoader-${{ env.CARGO_VERSION }}.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
