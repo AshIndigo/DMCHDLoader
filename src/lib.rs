@@ -1,13 +1,13 @@
 mod config;
 mod status;
 mod utilities;
+mod versions;
 
 use crate::status::Status;
 use crate::utilities::is_ddmk_loaded;
 use anyhow::anyhow;
 use std::env::current_exe;
 use std::ffi::c_void;
-use std::fs;
 use std::io::ErrorKind;
 use windows::core::{BOOL, GUID, HRESULT, PCSTR};
 use windows::Win32::Foundation::*;
@@ -16,7 +16,6 @@ use windows::Win32::System::Console::{
     ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::System::LibraryLoader::LoadLibraryA;
-use xxhash_rust::const_xxh3::xxh3_64;
 
 static mut REAL_DIRECTINPUT8CREATE: Option<
     unsafe extern "system" fn(HINSTANCE, u32, GUID, *mut *mut c_void, *mut c_void) -> HRESULT,
@@ -94,7 +93,7 @@ pub extern "system" fn DllMain(
                             log::error!("Failed to load other dlls: {}", err);
                         }
                     }
-                    match is_file_valid("dmc1.exe", 16596094990179088469) {
+                    match versions::is_file_valid("dmc1.exe", 16596094990179088469) {
                         Ok(_) => {
                             log::info!("Valid install of DMC1 detected!");
                         }
@@ -133,7 +132,7 @@ pub extern "system" fn DllMain(
                             log::error!("Failed to load other dlls: {}", err);
                         }
                     }
-                    match is_file_valid("dmc3.exe", 9031715114876197692) {
+                    match versions::is_file_valid("dmc3.exe", 9031715114876197692) {
                         Ok(_) => {
                             log::info!("Valid install of DMC3 detected!");
                         }
@@ -175,7 +174,7 @@ pub extern "system" fn DllMain(
 
 fn load_dmc1_mods(status: &mut Status) -> Result<(), std::io::Error> {
     if !config::CONFIG.mods.disable_ddmk {
-        match is_file_valid("Eva.dll", 2536699235936189826) {
+        match versions::is_file_valid("Eva.dll", 2536699235936189826) {
             Ok(_) => {
                 let _ = unsafe { LoadLibraryA(PCSTR::from_raw(c"Eva.dll".as_ptr() as *const u8)) };
             }
@@ -197,7 +196,7 @@ fn load_dmc1_mods(status: &mut Status) -> Result<(), std::io::Error> {
 fn load_dmc3_mods(status: &mut Status) -> Result<(), std::io::Error> {
     // The game will immolate if both of these try to load
     if !config::CONFIG.mods.disable_ddmk {
-        match is_file_valid("Mary.dll", 7087074874482460961) {
+        match versions::is_file_valid("Mary.dll", 7087074874482460961) {
             Ok(_) => {
                 let _ = unsafe { LoadLibraryA(PCSTR::from_raw(c"Mary.dll".as_ptr() as *const u8)) };
             }
@@ -214,7 +213,7 @@ fn load_dmc3_mods(status: &mut Status) -> Result<(), std::io::Error> {
         }
     }
     if !config::CONFIG.mods.disable_crimson && !is_ddmk_loaded() {
-        match is_file_valid("Crimson.dll", 6027093939875741571) {
+        match versions::is_file_valid("Crimson.dll", 6027093939875741571) {
             Ok(_) => {}
             Err(err) => match err.kind() {
                 ErrorKind::InvalidData => {
@@ -230,19 +229,6 @@ fn load_dmc3_mods(status: &mut Status) -> Result<(), std::io::Error> {
         let _ = unsafe { LoadLibraryA(PCSTR::from_raw(c"Crimson.dll".as_ptr() as *const u8)) };
     }
     Ok(())
-}
-
-fn is_file_valid(file_path: &str, expected_hash: u64) -> Result<(), std::io::Error> {
-    let data = fs::read(file_path)?;
-    //log::debug!("Hash for {file_path}: {}", xxh3_64(&data));
-    if xxh3_64(&data) == expected_hash {
-        Ok(())
-    } else {
-        Err(std::io::Error::new(
-            ErrorKind::InvalidData,
-            "File has invalid hash",
-        ))
-    }
 }
 
 #[allow(non_snake_case, clippy::missing_safety_doc)]
@@ -278,11 +264,8 @@ pub fn create_console() {
                     Ok(())
                 }
             }
-            match enable_ansi_support() {
-                Ok(_) => {}
-                Err(err) => {
-                    log::error!("Failed to enable ANSI support: {}", err);
-                }
+            if let Err(err) = enable_ansi_support() {
+                log::error!("Failed to enable ANSI support: {}", err);
             }
             log::info!("Console created successfully!");
         } else {
