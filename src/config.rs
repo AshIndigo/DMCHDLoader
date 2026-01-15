@@ -9,8 +9,8 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 });
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Mods {
-    pub disable_ddmk: bool,          // Stop DDMK from loading
-    pub disable_crimson: bool,       // Stop Crimson from loading
+    pub disable_ddmk: bool,    // Stop DDMK from loading
+    pub disable_crimson: bool, // Stop Crimson from loading
 }
 
 #[derive(Serialize, Deserialize, Debug)]

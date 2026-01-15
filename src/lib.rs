@@ -9,13 +9,13 @@ use anyhow::anyhow;
 use std::env::current_exe;
 use std::ffi::c_void;
 use std::io::ErrorKind;
-use windows::core::{BOOL, GUID, HRESULT, PCSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Console::{
-    AllocConsole, GetConsoleMode, GetStdHandle, SetConsoleMode,
-    ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
+    AllocConsole, ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle,
+    STD_OUTPUT_HANDLE, SetConsoleMode,
 };
 use windows::Win32::System::LibraryLoader::LoadLibraryA;
+use windows::core::{BOOL, GUID, HRESULT, PCSTR};
 
 static mut REAL_DIRECTINPUT8CREATE: Option<
     unsafe extern "system" fn(HINSTANCE, u32, GUID, *mut *mut c_void, *mut c_void) -> HRESULT,
