@@ -1,14 +1,12 @@
 mod config;
 mod status;
 mod utilities;
-mod versions;
 
-use crate::status::Status;
-use crate::utilities::is_ddmk_loaded;
+use crate::status::STATUS;
 use anyhow::anyhow;
-use std::env::current_exe;
-use std::ffi::c_void;
-use std::io::ErrorKind;
+use randomizer_utilities::loader_parser::LoaderStatus;
+use randomizer_utilities::versions::{Game, Mod, VersionInformation};
+use std::ffi::{CString, c_void};
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Console::{
     AllocConsole, ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle,
@@ -57,109 +55,44 @@ pub extern "system" fn DllMain(
     const DLL_PROCESS_DETACH: u32 = 0;
     const DLL_THREAD_ATTACH: u32 = 2;
     const DLL_THREAD_DETACH: u32 = 3;
-    const DMC_LAUNCHER: &str = "dmcLauncher.exe";
-    const DMC1: &str = "dmc1.exe";
-    const DMC2: &str = "dmc2.exe";
-    const DMC3: &str = "dmc3.exe";
 
     match fdw_reason {
         DLL_PROCESS_ATTACH => {
             load_real_dinput8();
-            let mut status: Status = Status {
-                crimson_hash_error: false,
-                ddmk_dmc3_hash_error: false,
-                dmc1_hash_error: false,
-                dmc3_hash_error: false,
-                ddmk_dmc1_hash_error: false,
-            };
-            match current_exe()
-                .unwrap()
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-            {
-                DMC_LAUNCHER => {
-                    // Do nothing but is here in case I ever want to do something to the launcher
-                }
-                DMC1 => {
+            let game = Game::get_current_game();
+            match game {
+                Game::DMCLauncher | Game::Unknown => {}
+                Game::DMC1 | Game::DMC2 | Game::DMC3 => {
                     create_console();
                     randomizer_utilities::setup_logger("dmc_mod_loader");
-                    match load_dmc1_mods(&mut status) {
-                        Ok(_) => {
-                            log::info!("Successfully loaded other dlls");
+                    match game.get_current_version() {
+                        Ok(version_info) => {
+                            if !version_info.valid_for_use {
+                                determine_error_message(&version_info);
+                            }
+                            let mod_list = game.identify_mods();
+                            load_mods(&mod_list);
+                            let status = LoaderStatus {
+                                game_information: version_info,
+                                mod_information: mod_list,
+                            };
+                            STATUS.set(status).unwrap();
+                            let name = CString::new(format!("{game}_randomizer.dll"));
+                            if let Err(err) = unsafe {
+                                LoadLibraryA(PCSTR::from_raw(name.unwrap().as_ptr() as *const u8))
+                            } {
+                                log::error!("Failed to load randomizer for {}: {}", game, err);
+                                log::warn!(
+                                    "This is safe to ignore if the relevant randomizer is not installed or does not exist"
+                                )
+                            }
                         }
                         Err(err) => {
-                            log::error!("Failed to load other dlls: {}", err);
+                            log::error!("{}", err);
                         }
                     }
-                    match versions::is_file_valid("dmc1.exe", 16596094990179088469) {
-                        Ok(_) => {
-                            log::info!("Valid install of DMC1 detected!");
-                        }
-                        Err(err) => match err.kind() {
-                            ErrorKind::InvalidData => {
-                                log::error!(
-                                    "DMC1 does not match the expected hash, bad things may occur! Please downgrade/repatch your game."
-                                );
-                                status.dmc1_hash_error = true;
-                            }
-                            ErrorKind::NotFound => {
-                                log::error!(
-                                    "DMC1 does not exist! How in the world did you manage this"
-                                );
-                            }
-                            _ => {
-                                log::error!("Unexpected error: {}", err);
-                            }
-                        },
-                    }
-                    let _ = unsafe {
-                        LoadLibraryA(PCSTR::from_raw(c"dmc1_randomizer.dll".as_ptr() as *const u8))
-                    };
                 }
-                DMC2 => {
-                    // Do nothing
-                }
-                DMC3 => {
-                    create_console();
-                    randomizer_utilities::setup_logger("dmc_mod_loader");
-                    match load_dmc3_mods(&mut status) {
-                        Ok(_) => {
-                            log::info!("Successfully loaded other dlls");
-                        }
-                        Err(err) => {
-                            log::error!("Failed to load other dlls: {}", err);
-                        }
-                    }
-                    match versions::is_file_valid("dmc3.exe", 9031715114876197692) {
-                        Ok(_) => {
-                            log::info!("Valid install of DMC3 detected!");
-                        }
-                        Err(err) => match err.kind() {
-                            ErrorKind::InvalidData => {
-                                log::error!(
-                                    "DMC3 does not match the expected hash, bad things may occur! Please downgrade/repatch your game."
-                                );
-                                status.dmc3_hash_error = true;
-                            }
-                            ErrorKind::NotFound => {
-                                log::error!(
-                                    "DMC3 does not exist! How in the world did you manage this"
-                                );
-                            }
-                            _ => {
-                                log::error!("Unexpected error: {}", err);
-                            }
-                        },
-                    }
-                    let _ = unsafe {
-                        LoadLibraryA(PCSTR::from_raw(c"dmc3_randomizer.dll".as_ptr() as *const u8))
-                    };
-                }
-                _ => {}
             }
-            status::STATUS.set(status).expect("Unable to set status");
         }
         DLL_PROCESS_DETACH => {
             // For cleanup
@@ -172,63 +105,58 @@ pub extern "system" fn DllMain(
     BOOL(1)
 }
 
-fn load_dmc1_mods(status: &mut Status) -> Result<(), std::io::Error> {
-    if !config::CONFIG.mods.disable_ddmk {
-        match versions::is_file_valid("Eva.dll", 2536699235936189826) {
-            Ok(_) => {
-                let _ = unsafe { LoadLibraryA(PCSTR::from_raw(c"Eva.dll".as_ptr() as *const u8)) };
+fn load_mods(mod_list: &[VersionInformation]) {
+    for game_mod in mod_list {
+        log::debug!("Attempting to load: {}", game_mod);
+        if should_load(game_mod) {
+            log::debug!(
+                "Loading mod: {}",
+                game_mod.mod_type.unwrap().get_file_name()
+            );
+            let name = CString::new(game_mod.mod_type.unwrap().get_file_name());
+            if let Err(err) =
+                unsafe { LoadLibraryA(PCSTR::from_raw(name.unwrap().as_ptr() as *const u8)) }
+            {
+                log::error!("Failed to load mod: {}", err);
             }
-            Err(err) => match err.kind() {
-                ErrorKind::InvalidData => {
-                    log::error!("Eva/DDMK Hash does not match version 2.7.3, please update DDMK");
-                    status.ddmk_dmc1_hash_error = true;
-                }
-                ErrorKind::NotFound => {}
-                _ => {
-                    log::error!("Unexpected error: {}", err);
-                }
-            },
         }
     }
-    Ok(())
 }
 
-fn load_dmc3_mods(status: &mut Status) -> Result<(), std::io::Error> {
-    // The game will immolate if both of these try to load
-    if !config::CONFIG.mods.disable_ddmk {
-        match versions::is_file_valid("Mary.dll", 7087074874482460961) {
-            Ok(_) => {
-                let _ = unsafe { LoadLibraryA(PCSTR::from_raw(c"Mary.dll".as_ptr() as *const u8)) };
-            }
-            Err(err) => match err.kind() {
-                ErrorKind::InvalidData => {
-                    log::error!("Mary/DDMK Hash does not match version 2.7.3, please update DDMK");
-                    status.ddmk_dmc3_hash_error = true;
-                }
-                ErrorKind::NotFound => {}
-                _ => {
-                    log::error!("Unexpected error: {}", err);
-                }
-            },
+fn should_load(version_info: &VersionInformation) -> bool {
+    if version_info.valid_for_use {
+        if let Some(mod_type) = version_info.mod_type {
+            return match mod_type {
+                Mod::Eva | Mod::Lucia | Mod::Mary => !config::CONFIG.mods.disable_ddmk,
+                Mod::Crimson => !config::CONFIG.mods.disable_crimson,
+            };
         }
+    } else {
+        log::error!("{}", determine_error_message(version_info));
+        return false;
     }
-    if !config::CONFIG.mods.disable_crimson && !is_ddmk_loaded() {
-        match versions::is_file_valid("Crimson.dll", 6027093939875741571) {
-            Ok(_) => {}
-            Err(err) => match err.kind() {
-                ErrorKind::InvalidData => {
-                    log::error!("Crimson Hash does not match version 0.4");
-                    status.crimson_hash_error = true;
-                }
-                ErrorKind::NotFound => {}
-                _ => {
-                    log::error!("Unexpected error: {}", err);
-                }
-            },
+    false
+}
+
+fn determine_error_message(ver_info: &VersionInformation) -> String {
+    match ver_info.mod_type {
+        None => {
+            format!(
+                "{} is not suitable for randomizer use, please re-patch",
+                ver_info.description
+            )
         }
-        let _ = unsafe { LoadLibraryA(PCSTR::from_raw(c"Crimson.dll".as_ptr() as *const u8)) };
+        Some(mod_type) => match mod_type {
+            Mod::Eva | Mod::Lucia | Mod::Mary => format!(
+                "Current DDMK Version: ({}) is not 2.7.3",
+                ver_info.description
+            ),
+            Mod::Crimson => format!(
+                "Current Crimson Version: ({}) is not 0.4",
+                ver_info.description
+            ),
+        },
     }
-    Ok(())
 }
 
 #[allow(non_snake_case, clippy::missing_safety_doc)]
