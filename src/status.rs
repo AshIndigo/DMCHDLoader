@@ -1,4 +1,4 @@
-use randomizer_utilities::loader_parser::LoaderStatus;
+use randomizer_utilities::dmc::loader_parser::LoaderStatus;
 use std::sync::OnceLock;
 
 pub static STATUS: OnceLock<LoaderStatus> = OnceLock::new();

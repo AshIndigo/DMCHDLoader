@@ -1,11 +1,10 @@
 mod config;
 mod status;
-mod utilities;
 
 use crate::status::STATUS;
 use anyhow::anyhow;
-use randomizer_utilities::loader_parser::LoaderStatus;
-use randomizer_utilities::versions::{Game, Mod, VersionInformation};
+use randomizer_utilities::dmc::loader_parser::LoaderStatus;
+use randomizer_utilities::dmc::versions::{Game, Mod, VersionInformation};
 use std::ffi::{CString, c_void};
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Console::{
